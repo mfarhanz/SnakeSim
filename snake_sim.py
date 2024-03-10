@@ -1,7 +1,9 @@
 import tkinter.font as tkFont
 import tkinter as tk
-from random import random, choice, choices
-from multiprocessing import Process, Queue
+from random import random, randrange, choice, choices
+from heapq import heapify, heappop, heappush
+from threading import Thread
+from traceback import print_exc
 from time import perf_counter
 
 def moves(x, y):
@@ -15,73 +17,78 @@ def patterns():
         [[1, 1], [1, 0]], [[1, 0], [1, 1]], [[0, 1], [1, 1]], [[1, 1], [0, 1]]
     ]
 
-def ret_move_lst(x, y, q):
-    move_lst = [(i % ROWS, j % COLS) for (i, j) in moves(x, y)
-                if not tiles[i % ROWS][j % COLS] and (i, j) != (x, y) and not
-                any([tiles[(x - 1) % ROWS][y] == 1 and tiles[x][(y + 1) % COLS] == 1
-                     and (i, j) == ((x - 1) % ROWS, (y + 1) % COLS),
-                     tiles[x][(y + 1) % COLS] == 1 and tiles[(x + 1) % ROWS][y] == 1
-                     and (i, j) == ((x + 1) % ROWS, (y + 1) % COLS),
-                     tiles[(x + 1) % ROWS][y] == 1 and tiles[x][(y - 1) % COLS] == 1
-                     and (i, j) == ((x + 1) % ROWS, (y - 1) % COLS),
-                     tiles[x][(y - 1) % COLS] == 1 and tiles[(x - 1) % ROWS][y] == 1
-                     and (i, j) == ((x - 1) % ROWS, (y - 1) % COLS)])]
-    q.put(move_lst)
+def check_diag_crossing(x, y, i, j):
+    return any(
+        [tiles[(x - 1) % ROWS][y] == 1 and tiles[x][(y + 1) % COLS] == 1 and (i, j) == ((x - 1) % ROWS, (y + 1) % COLS),
+         tiles[x][(y + 1) % COLS] == 1 and tiles[(x + 1) % ROWS][y] == 1 and (i, j) == ((x + 1) % ROWS, (y + 1) % COLS),
+         tiles[(x + 1) % ROWS][y] == 1 and tiles[x][(y - 1) % COLS] == 1 and (i, j) == ((x + 1) % ROWS, (y - 1) % COLS),
+         tiles[x][(y - 1) % COLS] == 1 and tiles[(x - 1) % ROWS][y] == 1 and (i, j) == ((x - 1) % ROWS, (y - 1) % COLS)])
 
-def ret_move_wt_lookup(x, y, q):
+def random_walk(x, y):
+    move_lst = [(i % ROWS, j % COLS) for (i, j) in moves(x, y)
+                if not tiles[i % ROWS][j % COLS] and (i, j) != (x, y) and not check_diag_crossing(x, y, i, j)]
     move_wt_lookup = {((x - 1) % ROWS, (y - 1) % COLS): 0.2, ((x - 1) % ROWS, y): 0.8,
                       ((x - 1) % ROWS, (y + 1) % COLS): 0.2, (x, (y - 1) % COLS): 0.8,
                       (x, (y + 1) % COLS): 0.8, ((x + 1) % ROWS, (y - 1) % COLS): 0.2,
                       ((x + 1) % ROWS, y): 0.8, ((x + 1) % ROWS, (y + 1) % COLS): 0.2}
-    q.put(move_wt_lookup)
+    wt_lst = [move_wt_lookup[coord] for coord in move_lst]
+    return choices(population=move_lst, weights=wt_lst, k=1)[0]
+
+def dijkstra(x, y):
+    dijkstra_dists[(x, y)] = 0
+    pq = [(0, (x, y))]
+    heapify(pq)
+    path = []
+    back_track = {(i, j): None for i in range(ROWS) for j in range(COLS)}
+    while pq:
+        curr_dist, curr_cell = heappop(pq)
+        if curr_cell == tuple(TARGET):
+            while curr_cell is not None:
+                path.append(curr_cell)
+                curr_cell = back_track[curr_cell]
+            return path
+        for move in moves(curr_cell[0], curr_cell[1]):
+            if not tiles[move[0] % ROWS][move[1] % COLS] and \
+                not check_diag_crossing(curr_cell[0], curr_cell[1], move[0] % ROWS, move[1] % COLS):
+                if curr_dist+1 < dijkstra_dists[move[0] % ROWS, move[1] % COLS]:
+                    dijkstra_dists[move[0] % ROWS, move[1] % COLS] = curr_dist+1
+                    heappush(pq, (curr_dist+1, (move[0] % ROWS, move[1] % COLS)))
+                    back_track[(move[0] % ROWS, move[1] % COLS)] = curr_cell
+    return [(x, y)]
 
 def best_move(x, y, alg):
     match alg:
-        case 'djikstra':
-            pass
+        case 'dijkstra':
+            if not path_routing:
+                dijkstra_dists.update((k, 5000) for k in dijkstra_dists)
+                path_routing[:] = dijkstra(x, y)
+                del path_routing[-1]
+            p = path_routing[-1]
+            del path_routing[-1]
+            return p
         case _:
-            queue = Queue()
-            start = perf_counter()
-            # move_lst = [(i % ROWS, j % COLS) for (i, j) in moves(x, y)
-            #             if not tiles[i % ROWS][j % COLS] and (i, j) != (x, y) and not
-            #             any([tiles[(x - 1) % ROWS][y] == 1 and tiles[x][(y + 1) % COLS] == 1
-            #                  and (i, j) == ((x - 1) % ROWS, (y + 1) % COLS),
-            #             tiles[x][(y + 1) % COLS] == 1 and tiles[(x + 1) % ROWS][y] == 1
-            #                  and (i, j) == ((x + 1) % ROWS, (y + 1) % COLS),
-            #             tiles[(x + 1) % ROWS][y] == 1 and tiles[x][(y - 1) % COLS] == 1
-            #                  and (i, j) == ((x + 1) % ROWS, (y - 1) % COLS),
-            #             tiles[x][(y - 1) % COLS] == 1 and tiles[(x - 1) % ROWS][y] == 1
-            #                  and (i, j) == ((x - 1) % ROWS, (y - 1) % COLS)])]
-            # move_wt_lookup = {((x - 1) % ROWS, (y - 1) % COLS): 0.2, ((x - 1) % ROWS, y): 0.8,
-            #                   ((x - 1) % ROWS, (y + 1) % COLS): 0.2, (x, (y - 1) % COLS): 0.8,
-            #                   (x, (y + 1) % COLS): 0.8, ((x + 1) % ROWS, (y - 1) % COLS): 0.2,
-            #                   ((x + 1) % ROWS, y): 0.8, ((x + 1) % ROWS, (y + 1) % COLS): 0.2}
-            p1 = Process(target=ret_move_lst, args=(x, y, queue))
-            p2 = Process(target=ret_move_wt_lookup, args=(x, y, queue))
-            p1.start()
-            p2.start()
-            move_wt_lookup = queue.get()
-            move_lst = queue.get()
-            p1.join()
-            p2.join()
-            stop = perf_counter()
-            print((stop - start) * 1000)
-            print()
-            # wt_lst = [move_wt_lookup[coord] for coord in move_lst]
-            # return choices(population=move_lst, weights=wt_lst, k=1)[0]
+            return random_walk(x, y)
 
 def sim(loop=False):
     try:
         if msg_label.winfo_ismapped():
             msg_label.place_forget()
+        global snake, TARGET
         col_width = int(c.winfo_width() / COLS)
         row_height = int(c.winfo_height() / ROWS)
-        newpos = best_move(head[0], head[1], alg=ALGO)
+        if not c.coords("target"):
+            while tiles[TARGET[0]][TARGET[1]]:
+                TARGET[:] = [randrange(ROWS), randrange(COLS)]
+            c.create_rectangle(TARGET[1] * col_width, TARGET[0] * row_height, (TARGET[1] + 1) * col_width,
+                               (TARGET[0] + 1) * row_height, fill='orange', tags="target")
+        # start_timer = perf_counter()
+        newpos = best_move(head[0], head[1], alg=algo_label.get().lower())
+        # stop_timer = perf_counter()
+        # print((stop_timer - start_timer) * 1000)
         tiles[newpos[0]][newpos[1]] = c.create_rectangle(newpos[1] * col_width, newpos[0] * row_height,
                                                          (newpos[1] + 1) * col_width, (newpos[0] + 1) * row_height,
                                                          fill=col_scheme['h_fill'][THEME], tags=["snek"],
                                                          stipple='gray75', outline=col_scheme['canvas'][THEME])
-        global snake
         last = snake.popitem()
         c.itemconfig(tiles[head[0]][head[1]], fill=col_scheme['b_fill'][THEME])
         c.delete(tiles[last[1][0]][last[1][1]])
@@ -90,6 +97,10 @@ def sim(loop=False):
         prev[:] = curr
         curr[:] = snake[list(snake)[-1]]
         head[:] = newpos
+        if head == TARGET:
+            c.delete("target")
+            # while tiles[TARGET[0]][TARGET[1]]:
+            #     TARGET[:] = [randrange(ROWS), randrange(COLS)]
         stop()
         if loop:
             thread = root.after(DELAY, sim, loop)
@@ -98,13 +109,15 @@ def sim(loop=False):
             button4.configure(state="disabled")
     except IndexError:
         stop()
+        # print_exc()
         msg_label.place(x=20, y=700 - msg_label.winfo_reqheight() * 2, in_=root)
 
 def reset_snake():
-    c.delete("snek")
+    c.delete("snek", "target")
     tiles[:] = [[0 if tiles[i][j] not in [0, 1] else tiles[i][j] for j in range(COLS)] for i in range(ROWS)]
+    dijkstra_dists.update((k, 5000) for k in dijkstra_dists)
+    path_routing[:] = []
     head[:] = [None, None]
-    body_border[:] = []
     snake.clear()
     # global DELAY
     # DELAY = 160
@@ -206,6 +219,15 @@ def set_theme():
         button.configure(activebackground=col_scheme['btn_act_bg'][THEME], background=col_scheme['wid_bg'][THEME],
                          foreground=col_scheme['w_fill'][THEME] if button.winfo_name() == "reset-map"
                          else col_scheme['wid_fg'][THEME])
+    dropdown1.configure(background=col_scheme['wid_bg'][THEME], foreground=col_scheme['wid_fg'][THEME],
+                        activeforeground=col_scheme['b_fill'][THEME], activebackground=col_scheme['btn_act_bg'][THEME])
+    dropdownMenu.configure(background=col_scheme['wid_bg'][THEME], activebackground=col_scheme['btn_act_bg'][THEME])
+    for index in range(dropdownMenu.index("end")+1):
+        dropdownMenu.entryconfigure(index, background=col_scheme['wid_bg'][THEME],
+                                    foreground=col_scheme['h_fill'][THEME],
+                                    activebackground=col_scheme['btn_act_bg'][THEME],
+                                    activeforeground=col_scheme['wid_fg'][THEME],
+                                    selectcolor=col_scheme['h_fill'][THEME])
 
 def config(widgets):
     for widget in widgets:
@@ -221,6 +243,11 @@ def config(widgets):
             case "set-wall" | "func2":
                 widget.configure(from_=1, to=4, orient="horizontal", showvalue=False, length=100, highlightthickness=0,
                                  font=tkFont.Font(family=tkFont.families()[3], size=13, weight='bold'))
+            case "!optionmenu":
+                widget.configure(borderwidth=1, width=15, highlightthickness=0, indicatoron=False, menu=dropdownMenu,
+                                 font=tkFont.Font(family=tkFont.families()[3], size=13, weight='bold'), relief="groove")
+            case "!menu":
+                widget.configure(borderwidth=0, relief='flat', tearoff=0, activeborderwidth=0)
 
 def callback(event):
     canvas_x = c.winfo_rootx()
@@ -254,16 +281,29 @@ def callback(event):
                         curr[:] = row, col
             elif event.state == 0x0400:         # RMB hit
                 create_block(row, col, col_width, row_height, MAZE_DYN)
-        # if tiles[row][col] == 1 and event.state == 0x0200:    # delete wall not working yet
-        #     # c.itemconfig(tiles[row][col], fill=col_scheme['canvas'][theme])
-        #     c.delete(tiles[row][col])
-        #     tiles[row][col] = 0
+        if event.state == 0x0200:
+            pass
         elif [row, col] == prev:
             c.delete(tiles[row][col])
             tiles[row][col] = 0
 
+def animate(n):
+    # if running:
+    if n < len(frames):
+        global FRAME_ID
+        c.delete(FRAME_ID)
+        FRAME_ID = c.create_image(0, 0, image=frames[n], anchor=tk.NW)
+        n = n + 1 if n != len(frames) - 1 else 0
+        root.after(FRAME_DELAY, animate, n)
+
+def on_close():
+    global running, background_thread
+    running = False
+    background_thread.join()
+    root.destroy()
+
 if __name__ == '__main__':
-    ROWS = 30  # uppercase vars can be modified in program
+    ROWS = 30  # uppercase vars are globally accessed
     COLS = 60
     DELAY = 160
     WALL_W = 1
@@ -271,28 +311,34 @@ if __name__ == '__main__':
     MAZE_DYN = False
     ALGO = ''
     THEME = 0
+    TARGET = [randrange(ROWS), randrange(COLS)]
+    FRAME_ID = None
+    FRAME_DELAY = 50
     head = [None, None]
     curr = [0, 0]
     prev = [0, 0]
     snake = {}
-    body_border = []
+    path_routing = []
+    dijkstra_dists = {(i, j): 5000 for i in range(ROWS) for j in range(COLS)}
     tiles = [[0 for _ in range(COLS)] for _ in range(ROWS)]
     # fonts = [0, 1, 2, 3, 4, 7, 40, 330, 340]
     col_scheme = {
-        'canvas': ('white', 'black', 'black', '#2A3132', 'midnight blue', 'turquoise4', 'aquamarine4', 'firebrick4'),
-        'wid_fg': (
-        'black', 'SlateBlue1', 'green3', '#90AFC5', 'royal blue', 'DarkSlateGray3', 'SeaGreen2', 'navajo white'),
-        'wid_bg': ('white', 'black', 'black', '#2A3132', 'midnight blue', 'turquoise4', 'aquamarine4', 'firebrick4'),
-        'btn_act_bg': (
-        'white', 'black', 'black', '#2A3132', 'midnight blue', 'turquoise4', 'aquamarine4', 'firebrick4'),
-        'h_fill': (
-        'gray20', 'SlateBlue4', 'green4', 'CadetBlue4', 'RoyalBlue4', 'DarkSlateGray4', 'lime green', 'khaki'),
-        'b_fill': (
-        'SlateGray4', 'SlateBlue1', 'green3', '#90AFC5', 'royal blue', 'DarkSlateGray3', 'SeaGreen2', 'navajo white'),
-        'w_fill': (
-        'LightSteelBlue4', 'purple4', 'sienna4', '#763726', 'purple4', 'aquamarine2', 'light sea green', 'OrangeRed3')
+        'canvas': ('white', 'black', 'black', '#003612', '#2A3132', 'midnight blue', 'turquoise4', 'aquamarine4',
+                   'firebrick4'),
+        'wid_fg': ('black', 'SlateBlue1', 'green3', '#84F055', '#90AFC5', 'royal blue', 'DarkSlateGray3', 'SeaGreen2',
+                   'navajo white'),
+        'wid_bg': ('white', 'black', 'black', '#003612', '#2A3132', 'midnight blue', 'turquoise4', 'aquamarine4',
+                   'firebrick4'),
+        'btn_act_bg': ('white', 'black', 'black', '#003612', '#2A3132', 'midnight blue', 'turquoise4', 'aquamarine4',
+                       'firebrick4'),
+        'h_fill': ('gray20', 'SlateBlue4', 'green4', '#03FCAD', 'CadetBlue4', 'RoyalBlue4', 'light sea green',
+                   'lime green', 'khaki'),
+        'b_fill': ('black', 'SlateBlue1', 'green3', '#53D59A', '#90AFC5', 'royal blue', 'DarkSlateGray3', 'SeaGreen2',
+                   'navajo white'),
+        'w_fill': ('black', 'purple4', 'sienna4', '#13882F', '#763726', 'purple4', 'aquamarine2', 'light sea green',
+                   'OrangeRed3')
     }
-
+    start_timer = perf_counter()
     root = tk.Tk(className=" SnakeSim")
     root.resizable(False, False)
     root.geometry('%dx%d+%d+%d' % (1200, 700, root.winfo_screenmmwidth()/4, root.winfo_screenmmheight()/4))
@@ -305,12 +351,24 @@ if __name__ == '__main__':
     button5 = tk.Button(text='\U0001F58C', name="theme", command=set_theme)     # U0001F3A8 (before)
     button6 = tk.Button(text='\U0001F500', name="dynamic_wall", command=dynamic_wall_toggle)
     button7 = tk.Button(text='\U0001F3C1', name="gen-maze", command=gen_maze)
-    slider1 = tk.Scale(name="set-wall", orient=tk.HORIZONTAL, label="\u258C\u2194", command=set_wall)
-    slider2 = tk.Scale(name="func2", orient=tk.HORIZONTAL, label="\u03B3", command=gamma)
+    slider1 = tk.Scale(label="\u258C\u2194", name="set-wall", orient=tk.HORIZONTAL, command=set_wall)
+    slider2 = tk.Scale(label="\u03B3", name="func2", orient=tk.HORIZONTAL, command=gamma)
     spinner1 = tk.Spinbox(name="delay", command=(root.register(speed), '%d'))
     msg_label = tk.Label(text="Collision!", name="message")
     delay_label = tk.StringVar(value='\u22D9')  # 23F1 (before)
-    config([button1, button2, button3, button4, button5, button6, button7, msg_label, spinner1, slider1, slider2])
+    algo_label = tk.StringVar()
+    algo_label.set('Random Walk')
+    dropdown1 = tk.OptionMenu(root, algo_label, 'Random Walk', command=gamma)
+    dropdownMenu = tk.Menu(dropdown1)
+    frames = [tk.PhotoImage(file='C:/Users/mfarh/OneDrive/Pictures/Downloads/scanline_f1.png').zoom(2, 1),
+              tk.PhotoImage(file='C:/Users/mfarh/OneDrive/Pictures/Downloads/scanline_f2.png').zoom(2, 1)]
+    for option in ('Random Walk', 'DFS', 'BFS', 'Dijkstra', 'A*', 'Greedy BFS', 'Bidirectional', 'Bellman-Ford',
+                   'Floyd-Warshall', 'JPS', 'Theta*', 'IDA*'):
+        dropdownMenu.add_radiobutton(label=option, variable=algo_label, value=option,
+                                     font=tkFont.Font(family=tkFont.families()[3], size=13))
+    dropdown1.bind("<FocusIn>", lambda event: event.widget.master.focus_set())
+    config([button1, button2, button3, button4, button5, button6, button7,
+            msg_label, spinner1, slider1, slider2, dropdown1, dropdownMenu])
     c.create_window(10, 10, anchor="nw", window=button1)
     c.create_window(button1.winfo_reqwidth()+20, 10, anchor="nw", window=button2)
     c.create_window(button1.winfo_reqwidth()*2+30, 10, anchor="nw", window=button3)
@@ -318,6 +376,7 @@ if __name__ == '__main__':
     c.create_window(button1.winfo_reqwidth()*4+60, 17, anchor="nw", window=spinner1)
     c.create_window(button1.winfo_reqwidth()*6+60, 7, anchor="nw", window=slider1)
     c.create_window(button1.winfo_reqwidth()*8+80, 7, anchor="nw", window=slider2)
+    c.create_window(button1.winfo_reqwidth()*11+100, 22, anchor="nw", window=dropdown1)
     c.create_window(c.winfo_reqwidth()-button5.winfo_reqwidth()-10, 10, anchor="nw", window=button5)
     c.create_window(c.winfo_reqwidth()-button5.winfo_reqwidth()-10, 70, anchor="nw", window=button6)
     c.create_window(c.winfo_reqwidth()-button5.winfo_reqwidth()-10, 130, anchor="nw", window=button7)
@@ -326,4 +385,9 @@ if __name__ == '__main__':
     c.bind("<Button-2>", callback)
     c.pack()
     set_theme()
+    # running = True
+    # background_thread = Thread(target=animate, args=(0,))
+    # background_thread.start()
+    # root.protocol("WM_DELETE_WINDOW", on_close)
+    animate(0)
     root.mainloop()
