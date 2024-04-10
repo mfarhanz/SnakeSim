@@ -3,6 +3,7 @@ import tkinter as tk
 from random import random, randrange, choice, choices
 from heapq import heapify, heappop, heappush
 from threading import Thread
+from os import path
 from traceback import print_exc
 from time import perf_counter
 
@@ -33,6 +34,10 @@ def random_walk(x, y):
                       ((x + 1) % ROWS, y): 0.8, ((x + 1) % ROWS, (y + 1) % COLS): 0.2}
     wt_lst = [move_wt_lookup[coord] for coord in move_lst]
     return choices(population=move_lst, weights=wt_lst, k=1)[0]
+
+def depth_first_search(x, y):
+    pass
+
 
 def dijkstra(x, y):
     dijkstra_dists[(x, y)] = 0
@@ -101,14 +106,14 @@ def sim(loop=False):
             c.delete("target")
             # while tiles[TARGET[0]][TARGET[1]]:
             #     TARGET[:] = [randrange(ROWS), randrange(COLS)]
-        stop()
+        stop('sim')
         if loop:
             thread = root.after(DELAY, sim, loop)
-            button3.configure(text="\u25A0", foreground="red", command=lambda: stop(thread))
+            button3.configure(text="\u25A0", foreground="red", command=lambda: stop('sim', thread))
             button1.configure(state="disabled")
             button4.configure(state="disabled")
     except IndexError:
-        stop()
+        stop('sim')
         # print_exc()
         msg_label.place(x=20, y=700 - msg_label.winfo_reqheight() * 2, in_=root)
 
@@ -129,16 +134,20 @@ def reset_map():
     c.delete("wall")
     tiles[:] = [[0 if tiles[i][j] == 1 else tiles[i][j] for j in range(COLS)] for i in range(ROWS)]
 
-def stop(thd=None):
+def stop(tag, thd=None):
     if thd:
         root.after_cancel(thd)
-    button3.configure(state="normal", text="\u25B6", foreground=col_scheme['wid_fg'][THEME], command=step)
-    button1.configure(state="normal")
-    button4.configure(state="normal")
+    if tag == 'sim':
+        button3.configure(state="normal", text="\u25B6", foreground=col_scheme['wid_fg'][THEME], command=step)
+        button1.configure(state="normal")
+        button4.configure(state="normal")
 
-def step():
-    if any(map(any, tiles)):
-        sim()
+def step(thd=None):
+    # if any(map(any, tiles)):
+    #     sim()
+    # filter_worker.join()
+    stop('filter', thd=thd)
+    c.delete(FRAME_ID)
 
 def run():
     if any(map(any, tiles)):
@@ -232,7 +241,7 @@ def set_theme():
 def config(widgets):
     for widget in widgets:
         match widget.winfo_name():
-            case "reset-snake" | "reset-map" | "step" | "run" | "theme" | "dynamic_wall" | "gen-maze":
+            case "reset-snake" | "reset-map" | "step" | "run" | "theme" | "dynamic-wall" | "gen-maze":
                 widget.configure(borderwidth=2, width=2, activeforeground="cyan", relief="flat", overrelief="raised",
                                  font=tkFont.Font(family=tkFont.families()[3], size=18, weight='bold'))
             case "message":
@@ -288,18 +297,19 @@ def callback(event):
             tiles[row][col] = 0
 
 def animate(n):
-    # if running:
-    if n < len(frames):
-        global FRAME_ID
-        c.delete(FRAME_ID)
-        FRAME_ID = c.create_image(0, 0, image=frames[n], anchor=tk.NW)
-        n = n + 1 if n != len(frames) - 1 else 0
-        root.after(FRAME_DELAY, animate, n)
+    if FILTER_WORKER_STATUS:
+        if n < len(frames):
+            global FRAME_ID
+            c.delete(FRAME_ID)
+            FRAME_ID = c.create_image(0, 0, image=frames[n], anchor=tk.NW)
+            n = n + 1 if n != len(frames) - 1 else 0
+            button3.configure(command=lambda: step(thd))
+            thd = root.after(FRAME_DELAY, animate, n)
 
 def on_close():
-    global running, background_thread
-    running = False
-    background_thread.join()
+    global FILTER_WORKER_STATUS, filter_worker
+    FILTER_WORKER_STATUS = False
+    filter_worker.join()
     root.destroy()
 
 if __name__ == '__main__':
@@ -309,6 +319,7 @@ if __name__ == '__main__':
     WALL_W = 1
     MAZE_COEFF = 1
     MAZE_DYN = False
+    FILTER_WORKER_STATUS = True
     ALGO = ''
     THEME = 0
     TARGET = [randrange(ROWS), randrange(COLS)]
@@ -338,7 +349,6 @@ if __name__ == '__main__':
         'w_fill': ('black', 'purple4', 'sienna4', '#13882F', '#763726', 'purple4', 'aquamarine2', 'light sea green',
                    'OrangeRed3')
     }
-    start_timer = perf_counter()
     root = tk.Tk(className=" SnakeSim")
     root.resizable(False, False)
     root.geometry('%dx%d+%d+%d' % (1200, 700, root.winfo_screenmmwidth()/4, root.winfo_screenmmheight()/4))
@@ -349,8 +359,9 @@ if __name__ == '__main__':
     button3 = tk.Button(text="\u25B6", name="step", command=step)     # u23F5 (before)
     button4 = tk.Button(text="\u22B2\u22B2", name="run", command=run)       # u23E9 (before)
     button5 = tk.Button(text='\U0001F58C', name="theme", command=set_theme)     # U0001F3A8 (before)
-    button6 = tk.Button(text='\U0001F500', name="dynamic_wall", command=dynamic_wall_toggle)
+    button6 = tk.Button(text='\U0001F500', name="dynamic-wall", command=dynamic_wall_toggle)
     button7 = tk.Button(text='\U0001F3C1', name="gen-maze", command=gen_maze)
+    button8 = tk.Button(text='\U0001F3C1', name="crt-mode", command=gen_maze)
     slider1 = tk.Scale(label="\u258C\u2194", name="set-wall", orient=tk.HORIZONTAL, command=set_wall)
     slider2 = tk.Scale(label="\u03B3", name="func2", orient=tk.HORIZONTAL, command=gamma)
     spinner1 = tk.Spinbox(name="delay", command=(root.register(speed), '%d'))
@@ -360,8 +371,8 @@ if __name__ == '__main__':
     algo_label.set('Random Walk')
     dropdown1 = tk.OptionMenu(root, algo_label, 'Random Walk', command=gamma)
     dropdownMenu = tk.Menu(dropdown1)
-    frames = [tk.PhotoImage(file='C:/Users/mfarh/OneDrive/Pictures/Downloads/scanline_f1.png').zoom(2, 1),
-              tk.PhotoImage(file='C:/Users/mfarh/OneDrive/Pictures/Downloads/scanline_f2.png').zoom(2, 1)]
+    frames = [tk.PhotoImage(file=f'{path.dirname(path.realpath(__file__))}\\scanline1\\scanline_f1.png').zoom(2, 1),
+              tk.PhotoImage(file=f'{path.dirname(path.realpath(__file__))}\\scanline1\\scanline_f2.png').zoom(2, 1)]
     for option in ('Random Walk', 'DFS', 'BFS', 'Dijkstra', 'A*', 'Greedy BFS', 'Bidirectional', 'Bellman-Ford',
                    'Floyd-Warshall', 'JPS', 'Theta*', 'IDA*'):
         dropdownMenu.add_radiobutton(label=option, variable=algo_label, value=option,
@@ -385,9 +396,8 @@ if __name__ == '__main__':
     c.bind("<Button-2>", callback)
     c.pack()
     set_theme()
-    # running = True
-    # background_thread = Thread(target=animate, args=(0,))
-    # background_thread.start()
-    # root.protocol("WM_DELETE_WINDOW", on_close)
-    animate(0)
+    filter_worker = Thread(target=animate, args=(0,))
+    filter_worker.start()
+    root.protocol("WM_DELETE_WINDOW", on_close)
+    # animate(0)
     root.mainloop()
