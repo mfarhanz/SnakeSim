@@ -5,4 +5,5 @@ You can also use different maze generation algorithms, and see their algorithms 
 Additionally, includes the Snake game, and a custom version where the roles are reversed (you're the target and the Snake is after you)
 
 ### Execution-  
-Extract the repo to a folder, and double click or run `python sim.py`
+Extract the repo to a folder, and double click or run `python sim.py`  
+<br>
