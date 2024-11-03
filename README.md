@@ -7,3 +7,5 @@ Additionally, includes the Snake game, and a custom version where the roles are 
 ### Execution-  
 Extract the repo to a folder, and double click or run `python sim.py`  
 <br>
+<br>
+![](https://github.com/mfarhanz/SnakeSim/blob/main/demo/snakesim.gif)
