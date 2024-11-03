@@ -4,5 +4,5 @@ View / Visualize different pathfinding algorithms in action using the game of [S
 You can also use different maze generation algorithms, and see their algorithms visualised  
 Additionally, includes the Snake game, and a custom version where the roles are reversed (you're the target and the Snake is after you)
 
-### Execution- 
-`python snake_sim.py`
+### Execution-  
+Extract the repo to a folder, and double click or run `python sim.py`
